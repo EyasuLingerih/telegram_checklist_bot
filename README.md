@@ -28,7 +28,7 @@ This project is a **Telegram Bot** that acts as a checklist reminder system. It 
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/yourusername/telegram-reminder-bot.git
+   git clone https://github.com/EyasuLingerih/telegram-reminder-bot.git
    cd telegram-reminder-bot
    ```
 
