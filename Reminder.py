@@ -77,12 +77,12 @@ class ReminderBot:
                 {"day": now.weekday(), "hour": 18, "minute": 56},  # Today at 17:45
                 
                 # Regular schedules
-                {"day": 1, "hour": 18, "minute": 10},  # Tuesday 6:10 PM
-                {"day": 2, "hour": 18, "minute": 10},  # Wednesday 6:10 PM
-                {"day": 3, "hour": 18, "minute": 10},  # Thursday 6:10 PM
-                {"day": 6, "hour": 8, "minute": 10},   # Sunday 8:10 AM
-                {"day": 6, "hour": 10, "minute": 40},  # Sunday 10:40 AM
-                {"day": 6, "hour": 15, "minute": 40}   # Sunday 3:40 PM
+                {"day": 2, "hour": 18, "minute": 10},  # Tuesday 6:10 PM
+                {"day": 3, "hour": 18, "minute": 10},  # Wednesday 6:10 PM
+                {"day": 4, "hour": 18, "minute": 10},  # Thursday 6:10 PM
+                {"day": 7, "hour": 8, "minute": 10},   # Sunday 8:10 AM
+                {"day": 7, "hour": 10, "minute": 40},  # Sunday 10:40 AM
+                {"day": 7, "hour": 15, "minute": 40}   # Sunday 3:40 PM
             ]
             
             print(f"Setting up {len(schedules)} schedules")
@@ -322,12 +322,12 @@ class ReminderBot:
             # Schedule regular reminders
             now = datetime.now()
             schedules = [
-                {"day": 1, "hour": 18, "minute": 10},  # Tuesday 6:10 PM
-                {"day": 2, "hour": 18, "minute": 10},  # Wednesday 6:10 PM
-                {"day": 3, "hour": 18, "minute": 10},  # Thursday 6:10 PM
-                {"day": 6, "hour": 8, "minute": 10},   # Sunday 8:10 AM
-                {"day": 6, "hour": 10, "minute": 40},  # Sunday 10:40 AM
-                {"day": 6, "hour": 15, "minute": 40} ,  # Sunday 3:40 PM
+                {"day": 2, "hour": 18, "minute": 10},  # Tuesday 6:10 PM
+                {"day": 3, "hour": 18, "minute": 10},  # Wednesday 6:10 PM
+                {"day": 4, "hour": 18, "minute": 10},  # Thursday 6:10 PM
+                {"day": 7, "hour": 8, "minute": 10},   # Sunday 8:10 AM
+                {"day": 7, "hour": 10, "minute": 40},  # Sunday 10:40 AM
+                {"day": 7, "hour": 15, "minute": 40} ,  # Sunday 3:40 PM
                 {"day": now.weekday(), "hour": 20, "minute": 30} 
             ]
 
