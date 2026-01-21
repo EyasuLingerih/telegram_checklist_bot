@@ -1,101 +1,145 @@
-# Telegram Checklist Reminder Bot
+# Telegram Checklist Mini App
 
-This project is a **Telegram Bot** that acts as a checklist reminder system. It helps users ensure that tasks are completed on time with interactive reminders and checklists. Admins can manage users and tasks, while authorized users can interact with the checklist.
-
----
+A Telegram Mini App for managing checklists with scheduled reminders. Built with Node.js/Express backend and React frontend.
 
 ## Features
-- **Interactive Checklist**: Mark tasks as complete or incomplete with inline buttons.
-- **Scheduled Reminders**: Fixed reminders for specific times and days.
-- **User Authorization**: Admins can add or remove authorized users.
-- **Task Management**: Admins can add or remove checklist items dynamically.
-- **Custom Scheduling**: Admins can view scheduled jobs.
-- **Data Persistence**: Checklist, users, and admin data are saved in JSON files.
 
----
+- Interactive checklist with toggle completion
+- Admin dashboard for managing users, groups, and schedules
+- Scheduled reminders sent via Telegram
+- Telegram WebApp authentication
+- PostgreSQL database
 
-## Requirements
-- Python 3.8+
-- Telegram Bot Token (from [BotFather](https://core.telegram.org/bots#botfather))
-- `python-telegram-bot` library (v20+)
-- Libraries:
-  - `asyncio`
-  - `pytz`
+## Project Structure
 
----
+```
+telegram-checklist-miniapp/
+├── backend/           # Node.js/Express API
+│   ├── src/
+│   │   ├── routes/    # API endpoints
+│   │   ├── services/  # Business logic
+│   │   ├── middleware/# Auth middleware
+│   │   └── utils/     # Helpers
+│   ├── prisma/        # Database schema
+│   └── scripts/       # Migration scripts
+├── frontend/          # React + Vite + TypeScript
+│   └── src/
+│       ├── components/
+│       ├── pages/
+│       ├── hooks/
+│       └── services/
+└── render.yaml        # Render.com deployment config
+```
 
-## Installation
+## Setup
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/EyasuLingerih/telegram-reminder-bot.git
-   cd telegram-reminder-bot
-   ```
+### Prerequisites
 
-2. **Install Dependencies**:
-   ```bash
-   pip install python-telegram-bot==20.3 pytz
-   ```
+- Node.js 18+
+- PostgreSQL database
+- Telegram Bot Token (from @BotFather)
 
-3. **Configure the Bot**:
-   - Create a file named `config.py` in the root directory with the following content:
-     ```python
-     BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-     INITIAL_ADMIN_ID = "YOUR_TELEGRAM_USER_ID"
-     ```
-     Replace `YOUR_TELEGRAM_BOT_TOKEN` with the token provided by BotFather and `YOUR_TELEGRAM_USER_ID` with your Telegram user ID.
+### Backend Setup
 
-4. **Run the Bot**:
-   ```bash
-   python Reminder.py
-   ```
+```bash
+cd backend
+npm install
+cp .env.example .env
+# Edit .env with your database URL and bot token
+npx prisma migrate dev
+npm run dev
+```
 
----
+### Frontend Setup
 
-## Usage
+```bash
+cd frontend
+npm install
+# Create .env with VITE_API_URL
+npm run dev
+```
 
-### Commands
-- `/start` - Display the help message.
-- `/show_checklist` - Display the interactive checklist.
-- `/add_item <task>` - Add a new task to the checklist (admin only).
-- `/remove_item <number>` - Remove a task by its number (admin only).
-- `/add_user <user_id>` - Authorize a new user (admin only).
-- `/add_admin <user_id>` - Make a user an admin (admin only).
-- `/show_jobs` - Display scheduled reminder jobs (admin only).
+### Environment Variables
 
-### Checklist Interaction
-Once the checklist is displayed, use the **inline buttons** to toggle task completion.
+**Backend (.env)**
+```
+DATABASE_URL=postgresql://user:password@localhost:5432/checklist
+TELEGRAM_BOT_TOKEN=your-bot-token
+JWT_SECRET=your-secret-key
+FRONTEND_URL=http://localhost:5173
+PORT=3000
+```
 
----
+**Frontend (.env)**
+```
+VITE_API_URL=http://localhost:3000
+```
 
-## Data Storage
-The bot saves data in the following JSON files:
-- `admin_users.json` - List of admin user IDs.
-- `authorized_users.json` - List of authorized user IDs.
-- `checklist.json` - Checklist items and their status.
+## Deployment to Render.com
 
----
+1. Push code to GitHub
+2. Go to Render Dashboard → "Blueprints"
+3. Connect your repository
+4. Render will auto-detect `render.yaml`
+5. Click "Apply" to create all services
+6. Set `TELEGRAM_BOT_TOKEN` manually in dashboard
+
+### Configure Telegram Bot
+
+1. Open @BotFather in Telegram
+2. Select your bot → Bot Settings → Menu Button
+3. Set Web App URL to your frontend URL
+4. Example: `https://checklist-frontend.onrender.com`
+
+## Data Migration
+
+To migrate data from your existing JSON files:
+
+```bash
+cd backend
+OLD_DATA_PATH=/path/to/json/files npm run migrate:json
+```
+
+This will import:
+- `admin_users.json` → Users (isAdmin=true)
+- `authorized_users.json` → Users
+- `checklist.json` → ChecklistItems
+- `groups.json` → Groups
+
+## API Endpoints
+
+### Auth
+- `POST /api/auth/validate` - Validate Telegram initData
+
+### Checklist
+- `GET /api/checklist` - Get all items
+- `POST /api/checklist` - Add item (admin)
+- `PATCH /api/checklist/:id/toggle` - Toggle completion
+- `DELETE /api/checklist/:id` - Remove item (admin)
+
+### Users (Admin)
+- `GET /api/users` - List users
+- `POST /api/users` - Add user
+- `DELETE /api/users/:id` - Remove user
+- `POST /api/users/:id/admin` - Promote to admin
+
+### Groups (Admin)
+- `GET /api/groups` - List groups
+- `POST /api/groups` - Create group
+- `PATCH /api/groups/:id` - Update group
+- `DELETE /api/groups/:id` - Delete group
+
+### Admin
+- `GET /api/admin/schedules` - View schedules
+- `GET /api/admin/stats` - Get statistics
+- `POST /api/admin/send-reminder` - Manual reminder
 
 ## Scheduled Reminders
-The bot automatically sends reminders at the following times:
-- **Tuesday to Thursday**: 6:10 PM
-- **Sunday**: 8:10 AM, 10:40 AM, and 3:40 PM
-- **Custom Time**: Admins can add test reminders dynamically.
 
----
-
-## Example Checklist Interaction
-- Task 1: ✅ Completed
-- Task 2: ⬜ Incomplete
-
-Click the buttons to toggle the task's status.
-
----
-
-## Author
-Eyasu Lingerih
-
----
+Default schedule (Africa/Addis_Ababa timezone):
+- Tuesday-Thursday: 6:10 PM
+- Sunday: 8:10 AM, 10:40 AM, 3:40 PM
 
 ## License
-This project is licensed under the MIT License.
+
+MIT
