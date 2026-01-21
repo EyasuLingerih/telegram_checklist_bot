@@ -1,0 +1,65 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  telegramId   String   @unique
+  firstName    String?
+  lastName     String?
+  username     String?
+  isAuthorized Boolean  @default(false)
+  isAdmin      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([telegramId])
+}
+
+model ChecklistItem {
+  id        Int      @id @default(autoincrement())
+  text      String
+  completed Boolean  @default(false)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  contactName String
+  phone       String
+  telegramId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+}
+
+model Schedule {
+  id          String   @id @default(uuid())
+  dayOfWeek   Int      // 0=Sunday, 1=Monday, ..., 6=Saturday
+  hour        Int      // 0-23 (in Africa/Addis_Ababa timezone)
+  minute      Int      // 0-59
+  isActive    Boolean  @default(true)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([dayOfWeek, hour, minute])
+}
+
+model AppConfig {
+  id        String   @id @default("singleton")
+  timezone  String   @default("Africa/Addis_Ababa")
+  settings  Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}

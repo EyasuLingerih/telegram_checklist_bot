@@ -7,6 +7,7 @@ from datetime import datetime, time
 import pytz
 import json
 import os
+timezone = pytz.timezone('Africa/Addis_Ababa')
 if os.name == 'nt':  # For Windows
     import asyncio
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -73,33 +74,35 @@ class ReminderBot:
             
             # Define all scheduled times
             schedules = [
-                # Test schedule - replace 17:45 with your desired test time
-                {"day": now.weekday(), "hour": 18, "minute": 56},  # Today at 17:45
-                
-                # Regular schedules
                 {"day": 2, "hour": 18, "minute": 10},  # Tuesday 6:10 PM
                 {"day": 3, "hour": 18, "minute": 10},  # Wednesday 6:10 PM
                 {"day": 4, "hour": 18, "minute": 10},  # Thursday 6:10 PM
-                {"day": 7, "hour": 8, "minute": 10},   # Sunday 8:10 AM
-                {"day": 7, "hour": 10, "minute": 40},  # Sunday 10:40 AM
-                {"day": 7, "hour": 15, "minute": 40}   # Sunday 3:40 PM
+                {"day": 0, "hour": 8, "minute": 10},   # Sunday 8:10 AM
+                {"day": 0, "hour": 10, "minute": 40},  # Sunday 10:40 AM
+                {"day": 0, "hour": 15, "minute": 40},  # Sunday 3:40 PM
             ]
-            
+
+            # For testing current time, use:
+            now = datetime.now(timezone)
+            test_schedule = {"day": now.weekday(), "hour": now.hour, "minute": now.minute + 1}
+            schedules.append(test_schedule)
+                        
             print(f"Setting up {len(schedules)} schedules")
             
             for schedule in schedules:
                 remind_time = time(hour=schedule["hour"], minute=schedule["minute"])
-                job = job_queue.run_daily(
+                application.job_queue.run_daily(
                     self.send_checklist_reminder,
                     remind_time,
                     days=(schedule["day"],),
-                    chat_id=chat_id,
-                    data={"chat_id": chat_id},
-                    name=f"reminder_{chat_id}_{schedule['day']}_{remind_time}"
+                    chat_id=int(user_id),
+                    data={"chat_id": int(user_id)},
+                    name=f"reminder_{user_id}_{schedule['day']}_{schedule['hour']}:{schedule['minute']}",
+                    timezone=timezone  # Add timezone here
                 )
                 print(f"Scheduled reminder for day {schedule['day']} at {schedule['hour']}:{schedule['minute']}")
                 if job:
-                    print(f"Next run time: {job.next_t}")
+                     print(f"Next run time: {job.next_t}")
                     
         except Exception as e:
             print(f"Error in scheduling: {str(e)}")
@@ -325,11 +328,14 @@ class ReminderBot:
                 {"day": 2, "hour": 18, "minute": 10},  # Tuesday 6:10 PM
                 {"day": 3, "hour": 18, "minute": 10},  # Wednesday 6:10 PM
                 {"day": 4, "hour": 18, "minute": 10},  # Thursday 6:10 PM
-                {"day": 7, "hour": 8, "minute": 10},   # Sunday 8:10 AM
-                {"day": 7, "hour": 10, "minute": 40},  # Sunday 10:40 AM
-                {"day": 7, "hour": 15, "minute": 40} ,  # Sunday 3:40 PM
-                {"day": now.weekday(), "hour": 20, "minute": 30} 
+                {"day": 0, "hour": 8, "minute": 10},   # Sunday 8:10 AM
+                {"day": 0, "hour": 10, "minute": 40},  # Sunday 10:40 AM
+                {"day": 0, "hour": 15, "minute": 40},  # Sunday 3:40 PM
             ]
+            # For testing at a specific time
+            now = datetime.now(timezone)
+            test_schedule = {"day": now.weekday(), "hour": 19, "minute": 25}  # Will run at 16:45 today
+            schedules.append(test_schedule)
 
             # Schedule regular times
             for user_id in self.authorized_users:
@@ -345,8 +351,7 @@ class ReminderBot:
                         name=f"reminder_{user_id}_{schedule['day']}_{schedule['hour']}:{schedule['minute']}"
                     )
 
-            # Add immediate test schedule (2 minutes from now)
-            print("Setting up test reminder...")
+                    print("Setting up test reminder...")
             for user_id in self.authorized_users:
                 application.job_queue.run_once(
                     self.send_checklist_reminder,
@@ -379,4 +384,4 @@ if __name__ == "__main__":
         print(f"Added initial admin: {INITIAL_ADMIN_ID}")
     
     bot.run()
-        
+         

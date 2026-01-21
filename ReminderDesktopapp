@@ -1,0 +1,803 @@
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import json
+import time
+import threading
+from tkinter import ttk
+
+try:
+    from plyer import notification
+    PLYER_AVAILABLE = True
+except ModuleNotFoundError:
+    PLYER_AVAILABLE = False
+    
+CHECKLIST_FILE = "checklist.json"
+GROUPS_FILE = "groups.json"
+REMINDER_TIMES = [(8, 0), (12, 0), (18, 0)]  # Reminder times (8 AM, 12 PM, 6 PM)
+PASSWORD = "1234"  # Change this to a secure password
+SUBMISSION_REMINDER_TIME = 1200  # 20 minutes in seconds
+
+class ReminderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Task Reminder")
+        self.root.geometry("800x600")  # Larger initial size
+        self.root.minsize(600, 400)    # Set minimum window size
+        
+        self.session_authenticated = False
+        self.checkbox_vars = []
+        
+        # Load data
+        self.groups = self.load_data(GROUPS_FILE, {
+            "Summit West": {"name": "John Doe", "phone": "123-456-7890"},
+            "Summit East": {"name": "Jane Smith", "phone": "987-654-3210"},
+            "Summit South": {"name": "Alice Johnson", "phone": "555-666-7777"}
+        })
+        self.checklist = self.load_data(CHECKLIST_FILE, [])
+        
+        # Initialize UI
+        self.setup_styles()
+        self.create_notebook()
+        self.create_reminders_page()
+        self.create_settings_page()
+        
+        # Add authentication check when switching to settings tab
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_change)
+    
+    def setup_styles(self):
+        self.style = ttk.Style()
+        
+        # Configure modern styles
+        self.style.configure("TFrame", background="#f0f0f0")
+        self.style.configure("TLabel", font=("Helvetica", 11), background="#f0f0f0")
+        self.style.configure("TButton", font=("Helvetica", 11), padding=10)
+        self.style.configure("TCheckbutton", font=("Helvetica", 11), background="#f0f0f0")
+        self.style.configure("TEntry", font=("Helvetica", 11))
+        
+        # Configure Treeview
+        self.style.configure("Treeview", 
+                           font=("Helvetica", 11),
+                           rowheight=30,
+                           background="#ffffff",
+                           fieldbackground="#ffffff")
+        self.style.configure("Treeview.Heading", 
+                           font=("Helvetica", 12, "bold"),
+                           padding=5)
+        
+        # Modern looking LabelFrame
+        self.style.configure("TLabelframe", 
+                           background="#ffffff",
+                           borderwidth=2)
+        self.style.configure("TLabelframe.Label", 
+                           font=("Helvetica", 12, "bold"),
+                           background="#ffffff",
+                           foreground="#333333",
+                           padding=(10, 5))
+    
+    def create_notebook(self):
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(expand=True, fill='both')
+        
+        self.frame_reminders = ttk.Frame(self.notebook)
+        self.frame_settings = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame_reminders, text="Reminders")
+        self.notebook.add(self.frame_settings, text="Settings")
+    
+    def create_reminders_page(self):
+        # Main container
+        main_container = ttk.Frame(self.frame_reminders)
+        main_container.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Top Section - Group Selection
+        top_frame = ttk.Frame(main_container)
+        top_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(top_frame, text="Select Group:", 
+                 font=("Helvetica", 12)).pack(side='left', padx=5)
+        
+        self.group_var = tk.StringVar()
+        self.group_dropdown = ttk.Combobox(top_frame, 
+                                         textvariable=self.group_var,
+                                         values=list(self.groups.keys()))
+        self.group_dropdown.pack(side='left', fill='x', expand=True, padx=5)
+        
+        # Title Label
+        ttk.Label(main_container, text="Have You Checked?", 
+                 font=("Helvetica", 14, "bold")).pack(pady=10)
+        
+        # Task Frame with scrollbar
+        task_frame = ttk.Frame(main_container)
+        task_frame.pack(fill='both', expand=True, pady=5)
+        
+        # Create canvas and scrollbar
+        self.canvas = tk.Canvas(task_frame)
+        scrollbar = ttk.Scrollbar(task_frame, orient="vertical", 
+                                command=self.canvas.yview)
+        
+        # Create inner frame for tasks
+        self.task_frame = ttk.Frame(self.canvas)
+        
+        # Pack scrollbar and canvas
+        scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        # Create window in canvas
+        self.canvas_window = self.canvas.create_window(
+            (0, 0), window=self.task_frame, anchor="nw"
+        )
+        
+        # Configure canvas and bindings
+        self.task_frame.bind("<Configure>", self._on_frame_configure)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Submit Button
+        self.submit_button = ttk.Button(main_container, 
+                                      text="Submit Tasks",
+                                      command=self.submit_tasks)
+        self.submit_button.pack(pady=10)
+        
+        self.update_task_list()
+    
+    def _on_frame_configure(self, event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        width = self.canvas.winfo_width()
+        self.canvas.itemconfig(self.canvas_window, width=width)
+    
+    def create_settings_page(self):
+        self.settings_container = ttk.Frame(self.frame_settings)
+        self.settings_container.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Telegram Settings Section
+        telegram_frame = ttk.LabelFrame(self.settings_container, text="Telegram Settings")
+        telegram_frame.pack(fill='x', padx=5, pady=5)
+        
+        # Bot Token
+        token_frame = ttk.Frame(telegram_frame)
+        token_frame.pack(fill='x', padx=5, pady=5)
+        ttk.Label(token_frame, text="Bot Token:").pack(side='left', padx=5)
+        self.token_entry = ttk.Entry(token_frame, width=50)
+        self.token_entry.pack(side='left', fill='x', expand=True, padx=5)
+        self.token_entry.insert(0, self.telegram_settings.get("bot_token", ""))
+        
+        # Recipient ID
+        recipient_frame = ttk.Frame(telegram_frame)
+        recipient_frame.pack(fill='x', padx=5, pady=5)
+        ttk.Label(recipient_frame, text="Recipient ID:").pack(side='left', padx=5)
+        self.recipient_entry = ttk.Entry(recipient_frame, width=50)
+        self.recipient_entry.pack(side='left', fill='x', expand=True, padx=5)
+        self.recipient_entry.insert(0, self.telegram_settings.get("recipient_id", ""))
+        
+        # Save Button
+        ttk.Button(telegram_frame, text="Save Telegram Settings", 
+                  command=self.save_telegram_settings).pack(pady=10)
+        
+        # Help Text
+        help_text = (
+            "To set up Telegram notifications:\n\n"
+            "1. Create a bot with BotFather in Telegram\n"
+            "2. Copy the bot token here\n"
+            "3. Start a chat with your bot\n"
+            "4. Send any message to the bot\n"
+            "5. Visit: https://api.telegram.org/bot<YourBotToken>/getUpdates\n"
+            "6. Find your chat ID in the response and paste it as Recipient ID"
+        )
+        help_label = ttk.Label(telegram_frame, text=help_text, wraplength=500)
+        help_label.pack(pady=10)
+        
+        # Tasks Management
+        tasks_frame = ttk.LabelFrame(self.settings_container, text="Tasks Management")
+        tasks_frame.pack(fill='both', expand=True, pady=10)
+        
+        # Tasks TreeView with scrollbar
+        tasks_tree_frame = ttk.Frame(tasks_frame)
+        tasks_tree_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        tasks_scroll = ttk.Scrollbar(tasks_tree_frame)
+        tasks_scroll.pack(side='right', fill='y')
+        
+        self.tasks_tree = ttk.Treeview(tasks_tree_frame,
+                                     columns=("Task",),
+                                     show="headings",
+                                     yscrollcommand=tasks_scroll.set,
+                                     height=8)
+        
+        self.tasks_tree.heading("Task", text="Task Description")
+        self.tasks_tree.pack(side='left', fill='both', expand=True)
+        
+        tasks_scroll.config(command=self.tasks_tree.yview)
+        
+        # Task buttons
+        task_buttons = ttk.Frame(tasks_frame)
+        task_buttons.pack(fill='x', padx=5, pady=5)
+        ttk.Button(task_buttons, text="Add Task", 
+                  command=self.add_task).pack(side='left', padx=5)
+        ttk.Button(task_buttons, text="Edit Task", 
+                  command=self.edit_task).pack(side='left', padx=5)
+        ttk.Button(task_buttons, text="Remove Task", 
+                  command=self.remove_task).pack(side='left', padx=5)
+        
+        # Update tasks tree
+        self.update_tasks_tree()
+        
+    def save_telegram_settings(self):
+        bot_token = self.token_entry.get().strip()
+        recipient_id = self.recipient_entry.get().strip()
+        
+        if not bot_token or not recipient_id:
+            messagebox.showwarning("Warning", "Both Bot Token and Recipient ID are required!")
+            return
+            
+        self.telegram_settings.update({
+            "bot_token": bot_token,
+            "recipient_id": recipient_id
+        })
+        
+        self.save_data("telegram_config.json", self.telegram_settings)
+        messagebox.showinfo("Success", "Telegram settings saved successfully!")
+        
+        # Test the connection
+        try:
+            import telegram
+            bot = telegram.Bot(token=bot_token)
+            bot.send_message(
+                chat_id=recipient_id,
+                text="✅ Test message - Your Reminder App is now connected!"
+            )
+            messagebox.showinfo("Success", "Test message sent successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to send test message: {str(e)}")
+
+    def send_message(self, selected_tasks):
+        if not self.telegram_settings.get("bot_token") or not self.telegram_settings.get("recipient_id"):
+            messagebox.showwarning("Warning", 
+                "Please configure Telegram settings first in the Settings tab!")
+            return False
+            
+        try:
+            import telegram
+            
+            # Create bot instance
+            bot = telegram.Bot(token=self.telegram_settings["bot_token"])
+            
+            # Prepare message content with emojis and formatting
+            task_list = "\n".join(f"✓ {task}" for task in selected_tasks)
+            message_text = (
+                f"🔔 *Checked Tasks Report*\n\n"
+                f"📋 Tasks Completed:\n{task_list}\n\n"
+                f"🕒 Time: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            try:
+                # Send message
+                message = bot.send_message(
+                    chat_id=self.telegram_settings["recipient_id"],
+                    text=message_text,
+                    parse_mode='Markdown'
+                )
+                
+                # Show success message
+                messagebox.showinfo("Success", "Tasks report sent successfully!")
+                return True
+                
+            except telegram.error.Unauthorized:
+                messagebox.showerror("Error", 
+                    "The bot was blocked by the user or incorrect Telegram ID.")
+                return False
+                
+            except telegram.error.BadRequest as e:
+                if "chat not found" in str(e).lower():
+                    messagebox.showerror("Error", 
+                        "Could not find Telegram chat. Please verify the Recipient ID.")
+                else:
+                    messagebox.showerror("Error", str(e))
+                return False
+                
+        except ImportError:
+            messagebox.showinfo("Telegram Bot Not Configured", 
+                "Please install python-telegram-bot:\n"
+                "pip install python-telegram-bot")
+            return False
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to send message: {str(e)}")
+            return False
+
+    def submit_tasks(self):
+        selected_tasks = [item["text"] for i, item in enumerate(self.checklist) 
+                         if self.checkbox_vars[i].get()]
+        
+        if not selected_tasks:
+            messagebox.showwarning("Warning", "Please select at least one task!")
+            return
+            
+        if self.send_message(selected_tasks):
+            # Mark selected tasks as completed
+            for i, item in enumerate(self.checklist):
+                if self.checkbox_vars[i].get():
+                    item["completed"] = True
+            
+            self.save_data(CHECKLIST_FILE, self.checklist)
+            self.update_task_list()groups_tree_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        groups_scroll = ttk.Scrollbar(groups_tree_frame)
+        groups_scroll.pack(side='right', fill='y')
+        
+        self.groups_tree = ttk.Treeview(groups_tree_frame,
+                                      columns=("Group", "Name", "Phone", "Telegram"),
+                                      show="headings",
+                                      yscrollcommand=groups_scroll.set,
+                                      height=8)
+        
+        self.groups_tree.heading("Group", text="Group Name")
+        self.groups_tree.heading("Name", text="Contact Name")
+        self.groups_tree.heading("Phone", text="Phone Number")
+        self.groups_tree.heading("Telegram", text="Telegram ID")
+        
+        # Set column widths
+        self.groups_tree.column("Group", width=100)
+        self.groups_tree.column("Name", width=150)
+        self.groups_tree.column("Phone", width=120)
+        self.groups_tree.column("Telegram", width=120)
+        self.groups_tree.pack(side='left', fill='both', expand=True)
+        
+        groups_scroll.config(command=self.groups_tree.yview)
+        
+        # Group buttons
+        group_buttons = ttk.Frame(groups_frame)
+        group_buttons.pack(fill='x', padx=5, pady=5)
+        ttk.Button(group_buttons, text="Add Group", 
+                  command=self.add_group).pack(side='left', padx=5)
+        ttk.Button(group_buttons, text="Edit Group", 
+                  command=self.edit_group).pack(side='left', padx=5)
+        ttk.Button(group_buttons, text="Remove Group", 
+                  command=self.remove_group).pack(side='left', padx=5)
+        
+        # Tasks Management
+        tasks_frame = ttk.LabelFrame(paned, text="Tasks Management")
+        paned.add(tasks_frame, weight=1)
+        
+        # Tasks TreeView with scrollbar
+        tasks_tree_frame = ttk.Frame(tasks_frame)
+        tasks_tree_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        tasks_scroll = ttk.Scrollbar(tasks_tree_frame)
+        tasks_scroll.pack(side='right', fill='y')
+        
+        self.tasks_tree = ttk.Treeview(tasks_tree_frame,
+                                     columns=("Task",),
+                                     show="headings",
+                                     yscrollcommand=tasks_scroll.set,
+                                     height=8)
+        
+        self.tasks_tree.heading("Task", text="Task Description")
+        self.tasks_tree.pack(side='left', fill='both', expand=True)
+        
+        tasks_scroll.config(command=self.tasks_tree.yview)
+        
+        # Task buttons
+        task_buttons = ttk.Frame(tasks_frame)
+        task_buttons.pack(fill='x', padx=5, pady=5)
+        ttk.Button(task_buttons, text="Add Task", 
+                  command=self.add_task).pack(side='left', padx=5)
+        ttk.Button(task_buttons, text="Edit Task", 
+                  command=self.edit_task).pack(side='left', padx=5)
+        ttk.Button(task_buttons, text="Remove Task", 
+                  command=self.remove_task).pack(side='left', padx=5)
+        
+        # Update trees
+        self.update_groups_tree()
+        self.update_tasks_tree()
+    
+    def update_task_list(self):
+        # Clear existing tasks
+        for widget in self.task_frame.winfo_children():
+            widget.destroy()
+        self.checkbox_vars.clear()
+        
+        # Add tasks with centering
+        for i, item in enumerate(self.checklist):
+            task_container = ttk.Frame(self.task_frame)
+            task_container.pack(fill='x', pady=2)
+            
+            var = tk.BooleanVar(value=item["completed"])
+            self.checkbox_vars.append(var)
+            
+            checkbox = ttk.Checkbutton(task_container, 
+                                     text=item["text"],
+                                     variable=var)
+            checkbox.pack(anchor='center')
+        
+        # Update scroll region
+        self.task_frame.update_idletasks()
+        self._on_frame_configure()
+    
+    def update_tasks_tree(self):
+        for item in self.tasks_tree.get_children():
+            self.tasks_tree.delete(item)
+        
+        for task in self.checklist:
+            self.tasks_tree.insert("", "end", values=(task["text"],))
+    
+    def update_groups_tree(self):
+        for item in self.groups_tree.get_children():
+            self.groups_tree.delete(item)
+        
+        for group_name, details in self.groups.items():
+            self.groups_tree.insert("", "end", 
+                values=(group_name, details["name"], details["phone"]))
+    
+    def edit_task(self):
+        selected_items = self.tasks_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a task to edit!")
+            return
+        
+        selected_item = selected_items[0]
+        task_text = self.tasks_tree.item(selected_item)['values'][0]
+        
+        # Find task in checklist
+        task_index = next((i for i, task in enumerate(self.checklist) 
+                        if task["text"] == task_text), None)
+                        
+        if task_index is None:
+            return
+            
+        # Create edit dialog
+        edit_window = tk.Toplevel(self.root)
+        edit_window.title("Edit Task")
+        edit_window.geometry("300x150")
+        edit_window.resizable(False, False)
+        
+        frame = ttk.Frame(edit_window, padding="10")
+        frame.pack(fill='both', expand=True)
+        
+        ttk.Label(frame, text="Task Description:").pack(pady=(0,5))
+        
+        entry = ttk.Entry(frame, width=40)
+        entry.insert(0, task_text)
+        entry.pack(pady=5)
+        
+        def save_changes():
+            new_text = entry.get().strip()
+            if new_text:
+                self.checklist[task_index]["text"] = new_text
+                self.save_data(CHECKLIST_FILE, self.checklist)
+                self.update_tasks_tree()
+                self.update_task_list()
+                edit_window.destroy()
+            else:
+                messagebox.showwarning("Warning", 
+                    "Task description cannot be empty!")
+        
+        ttk.Button(frame, text="Save", command=save_changes).pack(pady=10)
+        
+        # Center the window
+        edit_window.transient(self.root)
+        edit_window.grab_set()
+        edit_window.focus_set()
+        
+        # Position window relative to root
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (300 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (150 // 2)
+        edit_window.geometry(f"+{x}+{y}")
+    
+    def remove_task(self):
+        selected_items = self.tasks_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a task to remove!")
+            return
+        
+        if not messagebox.askyesno("Confirm", 
+            "Are you sure you want to remove the selected task(s)?"):
+            return
+            
+        for item in selected_items:
+            task_text = self.tasks_tree.item(item)['values'][0]
+            self.checklist = [task for task in self.checklist 
+                            if task["text"] != task_text]
+            
+        self.save_data(CHECKLIST_FILE, self.checklist)
+        self.update_tasks_tree()
+        self.update_task_list()
+    
+    def edit_group(self):
+        selected_items = self.groups_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a group to edit!")
+            return
+
+        selected_item = selected_items[0]
+        if not values:
+            return
+            
+        old_group_name = values[0]
+        
+        if old_group_name in self.groups:
+            # Create edit dialog
+            edit_window = tk.Toplevel(self.root)
+            edit_window.title("Edit Group")
+            edit_window.geometry("300x200")
+            edit_window.resizable(False, False)
+            
+            frame = ttk.Frame(edit_window, padding="10")
+            frame.pack(fill='both', expand=True)
+            
+            ttk.Label(frame, text="Group Name:").pack(pady=(0,5))
+            group_entry = ttk.Entry(frame, width=40)
+            group_entry.insert(0, old_group_name)
+            group_entry.pack(pady=5)
+            
+            ttk.Label(frame, text="Contact Name:").pack(pady=(5,5))
+            name_entry = ttk.Entry(frame, width=40)
+            name_entry.insert(0, self.groups[old_group_name]["name"])
+            name_entry.pack(pady=5)
+            
+            ttk.Label(frame, text="Phone Number:").pack(pady=(5,5))
+            phone_entry = ttk.Entry(frame, width=40)
+            phone_entry.insert(0, self.groups[old_group_name]["phone"])
+            phone_entry.pack(pady=5)
+            
+            def save_changes():
+                new_group_name = group_entry.get().strip()
+                if not new_group_name:
+                    messagebox.showwarning("Warning", "Group name cannot be empty!")
+                    return
+                    
+                if new_group_name != old_group_name and new_group_name in self.groups:
+                    messagebox.showwarning("Warning", "Group name already exists!")
+                    return
+                
+                # If group name changed, create new entry and delete old one
+                if new_group_name != old_group_name:
+                    self.groups[new_group_name] = self.groups.pop(old_group_name)
+                
+                self.groups[new_group_name]["name"] = name_entry.get().strip()
+                self.groups[new_group_name]["phone"] = phone_entry.get().strip()
+                self.save_data(GROUPS_FILE, self.groups)
+                self.update_groups_tree()
+                self.group_dropdown["values"] = list(self.groups.keys())
+                edit_window.destroy()
+            
+            ttk.Button(frame, text="Save", command=save_changes).pack(pady=10)
+            
+            # Center the window
+            edit_window.transient(self.root)
+            edit_window.grab_set()
+            
+            # Position window relative to root
+            x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (300 // 2)
+            y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (200 // 2)
+            edit_window.geometry(f"+{x}+{y}")
+    
+    def remove_group(self):
+        selected_items = self.groups_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("Warning", "Please select a group to remove!")
+            return
+        
+        if not messagebox.askyesno("Confirm", 
+            "Are you sure you want to remove the selected group(s)?"):
+            return
+            
+        for item in selected_items:
+            values = self.groups_tree.item(item)['values']
+            if values:
+                group_name = values[0]
+                if group_name in self.groups:
+                    del self.groups[group_name]
+        
+        self.save_data(GROUPS_FILE, self.groups)
+        self.update_groups_tree()
+        self.group_dropdown["values"] = list(self.groups.keys())
+        if self.group_var.get() not in self.groups:
+            self.group_var.set("")
+    
+    def add_group(self):
+        group_name = simpledialog.askstring("Add Group", "Enter group name:")
+        if not group_name:
+            return
+            
+        if group_name in self.groups:
+            messagebox.showwarning("Warning", "A group with this name already exists!")
+            return
+            
+        contact_name = simpledialog.askstring("Contact Name", "Enter contact person name:")
+        if not contact_name:
+            return
+            
+        contact_phone = simpledialog.askstring("Contact Phone", "Enter contact phone number:")
+        if not contact_phone:
+            return
+            
+        telegram_id = simpledialog.askstring("Telegram ID", 
+            "Enter contact's Telegram ID\n(Leave empty if not available):")
+        
+        self.groups[group_name] = {
+            "name": contact_name.strip(),
+            "phone": contact_phone.strip(),
+            "telegram_id": telegram_id.strip() if telegram_id else ""
+        }
+        self.save_data(GROUPS_FILE, self.groups)
+        self.update_groups_tree()
+        self.group_dropdown["values"] = list(self.groups.keys())
+        
+        if not telegram_id:
+            messagebox.showinfo("Telegram Setup Instructions",
+                "To get the contact's Telegram ID:\n\n"
+                "1. Ask the contact to start a chat with your bot\n"
+                "2. Have them send any message to the bot\n"
+                "3. Visit: https://api.telegram.org/bot<YourBotToken>/getUpdates\n"
+                "4. Look for the 'id' field in the 'chat' section\n"
+                "5. Edit the group and add the Telegram ID later")
+    
+    def add_task(self):
+        task_text = simpledialog.askstring("Add Task", "Enter task description:")
+        if task_text:
+            self.checklist.append({
+                "text": task_text.strip(),
+                "completed": False
+            })
+            self.save_data(CHECKLIST_FILE, self.checklist)
+            self.update_tasks_tree()
+            self.update_task_list()
+    
+    def show_settings(self, show=True):
+        if show:
+            self.settings_container.pack(fill='both', expand=True)
+        else:
+            self.settings_container.pack_forget()
+    
+    def on_tab_change(self, event):
+        current_tab = self.notebook.select()
+        if current_tab == str(self.frame_settings):
+            if not self.authenticate():
+                self.notebook.select(0)  # Switch back to reminders tab
+            else:
+                self.show_settings(True)
+        else:
+            self.show_settings(False)
+    
+    def authenticate(self):
+        if self.session_authenticated:
+            return True
+            
+        entered_password = simpledialog.askstring("Password Required", 
+            "Enter password to access settings:", show='*')
+            
+        if entered_password == PASSWORD:
+            self.session_authenticated = True
+            return True
+            
+        messagebox.showwarning("Warning", "Incorrect password!")
+        return False
+    
+    def submit_tasks(self):
+        if not self.group_var.get():
+            messagebox.showwarning("Warning", "Please select a group first!")
+            return
+            
+        selected_tasks = [item["text"] for i, item in enumerate(self.checklist) 
+                         if self.checkbox_vars[i].get()]
+        
+        if not selected_tasks:
+            messagebox.showwarning("Warning", "Please select at least one task!")
+            return
+            
+        if self.send_message(selected_tasks):  # Changed from send_sms to send_message
+            selected_indices = [i for i, item in enumerate(self.checklist) 
+                              if self.checkbox_vars[i].get()]
+            
+            # Mark selected tasks as completed
+            for index in selected_indices:
+                self.checklist[index]["completed"] = True
+            
+            self.save_data(CHECKLIST_FILE, self.checklist)
+            self.update_task_list()
+    
+    def send_message(self, selected_tasks):
+        selected_group = self.group_var.get()
+        if not selected_group:
+            messagebox.showwarning("Warning", "Please select a group!")
+            return False
+            
+        if selected_group not in self.groups:
+            messagebox.showwarning("Warning", "Invalid group selected!")
+            return False
+            
+        contact = self.groups[selected_group]
+        
+        if not contact.get("telegram_id"):
+            messagebox.showwarning("Warning", 
+                "No Telegram ID set for this contact. Please add a Telegram ID in the settings.")
+            return False
+            
+        try:
+            import telegram
+            
+            # Telegram Bot configuration
+            TELEGRAM_BOT_TOKEN = 'your_bot_token'  # Replace with your bot token
+            
+            # Create bot instance
+            bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+            
+            # Prepare message content with emojis and formatting
+            task_list = "\n".join(f"• {task}" for task in selected_tasks)
+            message_text = (
+                f"🔔 *New Tasks for Review*\n\n"
+                f"👤 Contact: {contact['name']}\n"
+                f"📱 Phone: {contact['phone']}\n\n"
+                f"📋 Tasks:\n{task_list}"
+            )
+            
+            try:
+                # Send message to the specific contact's Telegram ID
+                message = bot.send_message(
+                    chat_id=contact['telegram_id'],
+                    text=message_text,
+                    parse_mode='Markdown'
+                )
+                
+                # Show success message
+                messagebox.showinfo("Success", 
+                    f"Message sent successfully to {contact['name']} via Telegram")
+                return True
+                
+            except telegram.error.Unauthorized:
+                messagebox.showerror("Error", 
+                    "The bot was blocked by the user or incorrect Telegram ID.")
+                return False
+                
+            except telegram.error.BadRequest as e:
+                if "chat not found" in str(e).lower():
+                    messagebox.showerror("Error", 
+                        f"Could not find Telegram chat with ID: {contact['telegram_id']}\n"
+                        "Please verify the Telegram ID is correct.")
+                else:
+                    messagebox.showerror("Error", str(e))
+                return False
+                
+        except ImportError:
+            messagebox.showinfo("Telegram Bot Not Configured", 
+                "Please install python-telegram-bot:\n"
+                "pip install python-telegram-bot")
+            return False
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to send message: {str(e)}")
+            return False
+            messagebox.showinfo("Telegram Bot Not Configured", 
+                f"Would send message to:\nName: {contact['name']}\n"
+                f"Phone: {contact['phone']}\n\n"
+                f"Tasks:\n{task_list}\n\n"
+                "To implement Telegram messaging:\n"
+                "1. Install python-telegram-bot: pip install python-telegram-bot\n"
+                "2. Create a Telegram bot using BotFather\n"
+                "3. Add your bot token in the code\n"
+                "4. Get the chat ID where messages should be sent")
+            return True
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to send message: {str(e)}")
+            return False
+    
+    @staticmethod
+    def load_data(filename, default_data):
+        try:
+            with open(filename, "r") as file:
+                return json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return default_data
+    
+    @staticmethod
+    def save_data(filename, data):
+        with open(filename, "w") as file:
+            json.dump(data, file, indent=2)
+
+if __name__ == "__main__":
+    try:
+        root = tk.Tk()
+        app = ReminderApp(root)
+        root.mainloop()
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {str(e)}")
+        raise
